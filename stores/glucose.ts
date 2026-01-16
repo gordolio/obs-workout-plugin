@@ -20,7 +20,7 @@ interface GlucoseStore {
   isConnected: boolean
   lastUpdated: number | null
   setCurrentGlucose: (mgDl: number, trend?: GlucoseTrend) => void
-  addDataPoint: (value: number) => void
+  addDataPoint: (value: number, trend?: GlucoseTrend) => void
   setConnected: (connected: boolean) => void
   clearHistory: () => void
 }
@@ -37,7 +37,7 @@ export const useGlucoseStore = create<GlucoseStore>((set) => ({
   setCurrentGlucose: (mgDl: number, trend: GlucoseTrend = 'unknown') =>
     set({ currentMgDl: mgDl, trend, lastUpdated: Date.now() }),
 
-  addDataPoint: (value: number) =>
+  addDataPoint: (value: number, trend?: GlucoseTrend) =>
     set((state) => {
       const now = Date.now()
       const newHistory = [...state.history, { time: now, value }].slice(
@@ -47,6 +47,7 @@ export const useGlucoseStore = create<GlucoseStore>((set) => ({
       return {
         history: newHistory,
         currentMgDl: value,
+        trend: trend ?? state.trend,
         lastUpdated: now,
       }
     }),

@@ -5,37 +5,15 @@ import { Droplet } from 'lucide-react'
 import { useGlucoseStore, getTrendArrow } from '@/stores/glucose'
 import { MiniChart } from '@/components/overlays/MiniChart'
 import { cn } from '@/lib/utils'
+import { subscribeToGlucose } from '@/services/dexcom'
 
 export default function GlucoseOverlay() {
   const { currentMgDl, trend, history, isConnected } = useGlucoseStore()
 
-  // Demo data simulation (remove in production with real Dexcom)
+  // Subscribe to glucose updates via SSE
   useEffect(() => {
-    const store = useGlucoseStore.getState()
-    store.setConnected(true)
-
-    // Add initial historical data (30 min of 5-min intervals)
-    const baseGlucose = 110
-    for (let i = 30; i >= 0; i--) {
-      const historicalTime = Date.now() - i * 5 * 60 * 1000
-      const variance = Math.sin(historicalTime / 300000) * 25
-      const noise = (Math.random() - 0.5) * 15
-      const value = Math.round(baseGlucose + variance + noise)
-      store.addDataPoint(Math.max(70, Math.min(200, value)))
-    }
-
-    // Continue with real-time updates every 5 minutes
-    const interval = setInterval(
-      () => {
-        const variance = Math.sin(Date.now() / 300000) * 25
-        const noise = (Math.random() - 0.5) * 15
-        const value = Math.round(baseGlucose + variance + noise)
-        store.addDataPoint(Math.max(70, Math.min(200, value)))
-      },
-      5 * 60 * 1000
-    )
-
-    return () => clearInterval(interval)
+    const unsubscribe = subscribeToGlucose()
+    return unsubscribe
   }, [])
 
   const glucoseColor = getGlucoseColor(currentMgDl)

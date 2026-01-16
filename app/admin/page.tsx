@@ -16,15 +16,25 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useHeartRateStore } from '@/stores/heartrate'
+import { useGlucoseStore } from '@/stores/glucose'
 import {
   useConnectStromno,
   useDisconnectStromno,
   parseWidgetUrl,
   subscribeToHeartRate,
 } from '@/services/stromno'
+import {
+  useConnectDexcom,
+  useDisconnectDexcom,
+  subscribeToGlucose,
+} from '@/services/dexcom'
+import { useSettings } from '@/services/settings'
 
 export default function AdminPanel() {
   const heartRateConnected = useHeartRateStore((s) => s.isConnected)
+  const glucoseConnected = useGlucoseStore((s) => s.isConnected)
+
+  const { data: settings } = useSettings()
 
   const [stromnoUrl, setStromnoUrl] = useState('')
   const [stromnoError, setStromnoError] = useState<string | null>(null)
@@ -34,18 +44,40 @@ export default function AdminPanel() {
     password: '',
     region: 'us' as 'us' | 'ous',
   })
-  const [dexcomConnected, setDexcomConnected] = useState(false)
+  const [dexcomError, setDexcomError] = useState<string | null>(null)
 
-  const connectMutation = useConnectStromno()
-  const disconnectMutation = useDisconnectStromno()
+  // Sync state when settings load
+  const [hasLoadedSettings, setHasLoadedSettings] = useState(false)
+  if (settings && !hasLoadedSettings) {
+    setHasLoadedSettings(true)
+    if (settings.stromnoUrl) setStromnoUrl(settings.stromnoUrl)
+    if (settings.dexcomUsername) {
+      setDexcomCredentials({
+        username: settings.dexcomUsername,
+        password: settings.dexcomPassword ?? '',
+        region: settings.dexcomRegion ?? 'us',
+      })
+    }
+  }
+
+  const connectStromnoMutation = useConnectStromno()
+  const disconnectStromnoMutation = useDisconnectStromno()
+  const connectDexcomMutation = useConnectDexcom()
+  const disconnectDexcomMutation = useDisconnectDexcom()
 
   const stromnoLoading =
-    connectMutation.isPending || disconnectMutation.isPending
+    connectStromnoMutation.isPending || disconnectStromnoMutation.isPending
+  const dexcomLoading =
+    connectDexcomMutation.isPending || disconnectDexcomMutation.isPending
 
-  // Subscribe to SSE stream on mount
+  // Subscribe to SSE streams on mount
   useEffect(() => {
-    const unsubscribe = subscribeToHeartRate()
-    return unsubscribe
+    const unsubscribeHeartRate = subscribeToHeartRate()
+    const unsubscribeGlucose = subscribeToGlucose()
+    return () => {
+      unsubscribeHeartRate()
+      unsubscribeGlucose()
+    }
   }, [])
 
   // Validate widget URL as user types
@@ -59,7 +91,7 @@ export default function AdminPanel() {
     setStromnoError(null)
 
     try {
-      await connectMutation.mutateAsync(stromnoUrl)
+      await connectStromnoMutation.mutateAsync(stromnoUrl)
     } catch (err) {
       setStromnoError(err instanceof Error ? err.message : 'Connection failed')
     }
@@ -67,10 +99,31 @@ export default function AdminPanel() {
 
   async function handleStromnoDisconnect() {
     try {
-      await disconnectMutation.mutateAsync()
+      await disconnectStromnoMutation.mutateAsync()
       setStromnoError(null)
     } catch (err) {
       setStromnoError(err instanceof Error ? err.message : 'Disconnect failed')
+    }
+  }
+
+  async function handleDexcomConnect() {
+    if (!dexcomCredentials.username || !dexcomCredentials.password) return
+
+    setDexcomError(null)
+
+    try {
+      await connectDexcomMutation.mutateAsync(dexcomCredentials)
+    } catch (err) {
+      setDexcomError(err instanceof Error ? err.message : 'Connection failed')
+    }
+  }
+
+  async function handleDexcomDisconnect() {
+    try {
+      await disconnectDexcomMutation.mutateAsync()
+      setDexcomError(null)
+    } catch (err) {
+      setDexcomError(err instanceof Error ? err.message : 'Disconnect failed')
     }
   }
 
@@ -197,7 +250,7 @@ export default function AdminPanel() {
               Dexcom (Blood Glucose)
             </h2>
             <StatusBadge
-              status={dexcomConnected ? 'connected' : 'disconnected'}
+              status={glucoseConnected ? 'connected' : 'disconnected'}
             />
           </div>
 
@@ -216,10 +269,12 @@ export default function AdminPanel() {
                   }))
                 }
                 placeholder="your@email.com"
+                disabled={glucoseConnected || dexcomLoading}
                 className={cn(
                   'w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2',
                   'text-sm text-white placeholder:text-zinc-500',
-                  'focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50'
+                  'focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50',
+                  (glucoseConnected || dexcomLoading) && 'opacity-60'
                 )}
               />
             </div>
@@ -238,10 +293,12 @@ export default function AdminPanel() {
                   }))
                 }
                 placeholder="••••••••"
+                disabled={glucoseConnected || dexcomLoading}
                 className={cn(
                   'w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2',
                   'text-sm text-white placeholder:text-zinc-500',
-                  'focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50'
+                  'focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50',
+                  (glucoseConnected || dexcomLoading) && 'opacity-60'
                 )}
               />
             </div>
@@ -258,10 +315,12 @@ export default function AdminPanel() {
                     region: e.target.value as 'us' | 'ous',
                   }))
                 }
+                disabled={glucoseConnected || dexcomLoading}
                 className={cn(
                   'w-full rounded-lg border border-zinc-700 bg-zinc-800/50 px-3 py-2',
                   'text-sm text-white',
-                  'focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50'
+                  'focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50',
+                  (glucoseConnected || dexcomLoading) && 'opacity-60'
                 )}
               >
                 <option value="us">United States</option>
@@ -270,16 +329,35 @@ export default function AdminPanel() {
             </div>
           </div>
 
+          {dexcomError && (
+            <div className="mt-4 flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {dexcomError}
+            </div>
+          )}
+
           <button
-            onClick={() => setDexcomConnected((c) => !c)}
+            onClick={
+              glucoseConnected ? handleDexcomDisconnect : handleDexcomConnect
+            }
+            disabled={
+              dexcomLoading ||
+              (!glucoseConnected &&
+                (!dexcomCredentials.username || !dexcomCredentials.password))
+            }
             className={cn(
               'mt-4 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors',
-              dexcomConnected
+              'disabled:cursor-not-allowed disabled:opacity-50',
+              glucoseConnected
                 ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
                 : 'bg-blue-500 text-white hover:bg-blue-600'
             )}
           >
-            {dexcomConnected ? (
+            {dexcomLoading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" /> Connecting...
+              </>
+            ) : glucoseConnected ? (
               <>
                 <WifiOff className="h-4 w-4" /> Disconnect
               </>

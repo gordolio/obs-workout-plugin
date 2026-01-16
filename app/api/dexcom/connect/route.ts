@@ -1,28 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
-import { stromnoManager } from '@/lib/stromno-manager'
+import { dexcomManager, DexcomCredentialsSchema } from '@/lib/dexcom-manager'
 import { updateSettings } from '@/lib/db'
-
-const ConnectRequestSchema = z.object({
-  widgetUrl: z.string().url(),
-})
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const parsed = ConnectRequestSchema.safeParse(body)
+    const parsed = DexcomCredentialsSchema.safeParse(body)
 
     if (!parsed.success) {
       return NextResponse.json(
-        { error: 'Invalid request body', details: parsed.error.flatten() },
+        { error: 'Invalid credentials', details: parsed.error.flatten() },
         { status: 400 }
       )
     }
 
-    await stromnoManager.connect(parsed.data.widgetUrl)
+    await dexcomManager.connect(parsed.data)
 
-    // Save URL to database on successful connection
-    updateSettings({ stromnoUrl: parsed.data.widgetUrl })
+    // Save credentials to database on successful connection
+    updateSettings({
+      dexcomUsername: parsed.data.username,
+      dexcomPassword: parsed.data.password,
+      dexcomRegion: parsed.data.region,
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {
