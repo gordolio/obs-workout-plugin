@@ -22,7 +22,7 @@ Real-time health metrics overlays for OBS. Display your heart rate and blood glu
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/yourusername/obs-workout-plugin.git
+   git clone https://github.com/gordolio/obs-workout-plugin.git
    cd obs-workout-plugin
    ```
 
