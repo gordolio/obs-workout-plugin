@@ -3,7 +3,7 @@ import { getSettings, updateSettings, SettingsUpdateSchema } from '@/lib/db'
 
 export async function GET() {
   try {
-    const settings = getSettings()
+    const settings = await getSettings()
     return NextResponse.json(settings)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'

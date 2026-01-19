@@ -16,6 +16,17 @@ export const SettingsSchema = z.object({
 
 export type Settings = z.infer<typeof SettingsSchema>
 
+const SettingsRecordSchema = z.object({
+  key: z.enum([
+    'stromnoUrl',
+    'dexcomUsername',
+    'dexcomPassword',
+    'dexcomRegion',
+  ]),
+  value: z.string().nullable(),
+})
+const SettingsRecordArraySchema = z.array(SettingsRecordSchema)
+
 export const SettingsUpdateSchema = SettingsSchema.partial()
 export type SettingsUpdate = z.infer<typeof SettingsUpdateSchema>
 
@@ -52,7 +63,8 @@ async function getDb(): Promise<Database.Database> {
   return dbInitPromise
 }
 
-const SETTINGS_KEYS: (keyof Settings)[] = [
+type SettingsKey = keyof Settings
+const SETTINGS_KEYS: SettingsKey[] = [
   'stromnoUrl',
   'dexcomUsername',
   'dexcomPassword',
@@ -64,12 +76,9 @@ export async function getSettings(): Promise<Settings> {
   const stmt = database.prepare(
     'SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?)'
   )
-  const rows = stmt.all(...SETTINGS_KEYS) as {
-    key: string
-    value: string | null
-  }[]
+  const rows = SettingsRecordArraySchema.parse(stmt.all(...SETTINGS_KEYS))
 
-  const rawSettings: Record<string, string | null> = {
+  const rawSettings: Record<SettingsKey, string | null> = {
     stromnoUrl: null,
     dexcomUsername: null,
     dexcomPassword: null,
