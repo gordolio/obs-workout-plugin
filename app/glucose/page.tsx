@@ -6,9 +6,15 @@ import { useGlucoseStore, getTrendArrow } from '@/stores/glucose'
 import { MiniChart } from '@/components/overlays/MiniChart'
 import { cn } from '@/lib/utils'
 import { subscribeToGlucose } from '@/services/dexcom'
+import { useColorConfig } from '@/services/colors'
+import { getColorForValue, DEFAULT_GLUCOSE_CONFIG } from '@/lib/color-config'
 
 export default function GlucoseOverlay() {
   const { currentMgDl, trend, history, isConnected } = useGlucoseStore()
+  const { data: colorConfig } = useColorConfig('glucose')
+
+  // Use fetched config or defaults
+  const config = colorConfig ?? DEFAULT_GLUCOSE_CONFIG
 
   // Subscribe to glucose updates via SSE
   useEffect(() => {
@@ -16,7 +22,29 @@ export default function GlucoseOverlay() {
     return unsubscribe
   }, [])
 
-  const glucoseColor = getGlucoseColor(currentMgDl)
+  // Get icon color based on config
+  const iconColor = config.icon.useGradient
+    ? getColorForValue(currentMgDl, config)
+    : currentMgDl === 0
+      ? config.waitingColor
+      : config.icon.staticColor
+
+  // Get text/number color based on config
+  const textColor = config.text.useGradient
+    ? getColorForValue(currentMgDl, config)
+    : currentMgDl === 0
+      ? config.waitingColor
+      : config.text.staticColor
+
+  // Get graph color/stops based on config
+  const graphColor = config.graph.useGradient
+    ? (config.colorStops[Math.floor(config.colorStops.length / 2)]?.color ??
+      config.graph.staticColor)
+    : config.graph.staticColor
+  const graphColorStops = config.graph.useGradient
+    ? config.colorStops
+    : undefined
+
   const trendArrow = getTrendArrow(trend)
 
   return (
@@ -32,18 +60,18 @@ export default function GlucoseOverlay() {
           <Droplet
             className="h-8 w-8"
             style={{
-              color: glucoseColor,
-              filter: `drop-shadow(0 0 6px ${glucoseColor})`,
+              color: iconColor,
+              filter: `drop-shadow(0 0 6px ${iconColor})`,
             }}
-            fill={glucoseColor}
+            fill={iconColor}
           />
           <div className="flex flex-col">
             <div className="flex items-center gap-1">
               <span
                 className="font-mono text-4xl font-bold leading-none"
                 style={{
-                  color: glucoseColor,
-                  textShadow: `0 0 20px ${glucoseColor}40`,
+                  color: textColor,
+                  textShadow: `0 0 20px ${textColor}40`,
                 }}
               >
                 {currentMgDl || '--'}
@@ -61,7 +89,7 @@ export default function GlucoseOverlay() {
         <div className="h-[60px] min-w-[140px] flex-1">
           <MiniChart
             data={history}
-            color="#3b82f6"
+            color={graphColor}
             gradientId="glucoseGradient"
             minY={40}
             maxY={250}
@@ -69,6 +97,7 @@ export default function GlucoseOverlay() {
               { value: 70, color: '#f59e0b' },
               { value: 180, color: '#f59e0b' },
             ]}
+            colorStops={graphColorStops}
           />
         </div>
 
@@ -81,13 +110,4 @@ export default function GlucoseOverlay() {
       </div>
     </div>
   )
-}
-
-function getGlucoseColor(mgDl: number): string {
-  if (mgDl === 0) return '#888'
-  if (mgDl < 70) return '#ef4444' // Red - hypoglycemia
-  if (mgDl < 80) return '#f59e0b' // Orange - borderline low
-  if (mgDl <= 140) return '#22c55e' // Green - normal
-  if (mgDl <= 180) return '#f59e0b' // Orange - elevated
-  return '#ef4444' // Red - hyperglycemia
 }

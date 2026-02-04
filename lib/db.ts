@@ -2,6 +2,12 @@ import Database from 'better-sqlite3'
 import { z } from 'zod'
 import path from 'path'
 import { mkdir } from 'fs/promises'
+import {
+  ColorConfig,
+  ColorConfigSchema,
+  DEFAULT_HEARTRATE_CONFIG,
+  DEFAULT_GLUCOSE_CONFIG,
+} from './color-config'
 
 // Database path - stored in project root for development
 const DB_PATH = path.join(process.cwd(), 'data', 'settings.db')
@@ -118,4 +124,50 @@ export async function updateSettings(
 export async function clearSettings(): Promise<void> {
   const database = await getDb()
   database.exec('DELETE FROM settings')
+}
+
+// Color config functions
+export type MetricType = 'heartrate' | 'glucose'
+
+const DEFAULT_CONFIGS: Record<MetricType, ColorConfig> = {
+  heartrate: DEFAULT_HEARTRATE_CONFIG,
+  glucose: DEFAULT_GLUCOSE_CONFIG,
+}
+
+export async function getColorConfig(metric: MetricType): Promise<ColorConfig> {
+  const database = await getDb()
+  const key =
+    metric === 'heartrate' ? 'heartrateColorConfig' : 'glucoseColorConfig'
+
+  const stmt = database.prepare('SELECT value FROM settings WHERE key = ?')
+  const row = stmt.get(key) as { value: string | null } | undefined
+
+  if (!row?.value) {
+    return DEFAULT_CONFIGS[metric]
+  }
+
+  try {
+    const parsed = JSON.parse(row.value)
+    return ColorConfigSchema.parse(parsed)
+  } catch {
+    return DEFAULT_CONFIGS[metric]
+  }
+}
+
+export async function updateColorConfig(
+  metric: MetricType,
+  config: ColorConfig
+): Promise<ColorConfig> {
+  const validated = ColorConfigSchema.parse(config)
+  const database = await getDb()
+  const key =
+    metric === 'heartrate' ? 'heartrateColorConfig' : 'glucoseColorConfig'
+
+  const upsert = database.prepare(`
+    INSERT INTO settings (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `)
+
+  upsert.run(key, JSON.stringify(validated))
+  return validated
 }

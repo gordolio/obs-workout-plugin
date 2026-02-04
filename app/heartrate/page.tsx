@@ -6,10 +6,16 @@ import { useHeartRateStore } from '@/stores/heartrate'
 import { MiniChart } from '@/components/overlays/MiniChart'
 import { cn } from '@/lib/utils'
 import { subscribeToHeartRate } from '@/services/stromno'
+import { useColorConfig } from '@/services/colors'
+import { getColorForValue, DEFAULT_HEARTRATE_CONFIG } from '@/lib/color-config'
 
 export default function HeartRateOverlay() {
   const { currentBpm, history, isConnected } = useHeartRateStore()
   const [pulse, setPulse] = useState(false)
+  const { data: colorConfig } = useColorConfig('heartrate')
+
+  // Use fetched config or defaults
+  const config = colorConfig ?? DEFAULT_HEARTRATE_CONFIG
 
   // Subscribe to SSE stream on mount
   useEffect(() => {
@@ -30,7 +36,28 @@ export default function HeartRateOverlay() {
     return () => clearInterval(timer)
   }, [currentBpm])
 
-  const bpmColor = getBpmColor(currentBpm)
+  // Get icon color based on config
+  const iconColor = config.icon.useGradient
+    ? getColorForValue(currentBpm, config)
+    : currentBpm === 0
+      ? config.waitingColor
+      : config.icon.staticColor
+
+  // Get text/number color based on config
+  const textColor = config.text.useGradient
+    ? getColorForValue(currentBpm, config)
+    : currentBpm === 0
+      ? config.waitingColor
+      : config.text.staticColor
+
+  // Get graph color/stops based on config
+  const graphColor = config.graph.useGradient
+    ? (config.colorStops[Math.floor(config.colorStops.length / 2)]?.color ??
+      config.graph.staticColor)
+    : config.graph.staticColor
+  const graphColorStops = config.graph.useGradient
+    ? config.colorStops
+    : undefined
 
   return (
     <div className="flex h-screen w-full items-center justify-center bg-transparent p-4">
@@ -48,19 +75,19 @@ export default function HeartRateOverlay() {
               pulse ? 'scale-125' : 'scale-100'
             )}
             style={{
-              color: bpmColor,
+              color: iconColor,
               filter: pulse
-                ? `drop-shadow(0 0 12px ${bpmColor})`
-                : `drop-shadow(0 0 6px ${bpmColor})`,
+                ? `drop-shadow(0 0 12px ${iconColor})`
+                : `drop-shadow(0 0 6px ${iconColor})`,
             }}
-            fill={bpmColor}
+            fill={iconColor}
           />
           <div className="flex flex-col">
             <span
               className="font-mono text-4xl font-bold leading-none"
               style={{
-                color: bpmColor,
-                textShadow: `0 0 20px ${bpmColor}40`,
+                color: textColor,
+                textShadow: `0 0 20px ${textColor}40`,
               }}
             >
               {currentBpm || '--'}
@@ -74,10 +101,11 @@ export default function HeartRateOverlay() {
         <div className="h-[60px] min-w-[140px] flex-1">
           <MiniChart
             data={history}
-            color="#ef4444"
+            color={graphColor}
             gradientId="heartGradient"
             minY={50}
             maxY={200}
+            colorStops={graphColorStops}
           />
         </div>
 
@@ -90,12 +118,4 @@ export default function HeartRateOverlay() {
       </div>
     </div>
   )
-}
-
-function getBpmColor(bpm: number): string {
-  if (bpm === 0) return '#888'
-  if (bpm < 60) return '#3b82f6'
-  if (bpm < 100) return '#22c55e'
-  if (bpm < 140) return '#f59e0b'
-  return '#ef4444'
 }

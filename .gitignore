@@ -44,3 +44,6 @@ Thumbs.db
 
 # SQLite database
 data/
+
+# Training session config (contains personal Zoom URL)
+.training-config

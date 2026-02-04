@@ -9,6 +9,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts'
+import { ColorStop } from '@/lib/color-config'
 
 interface DataPoint {
   time: number
@@ -22,6 +23,7 @@ interface MiniChartProps {
   minY?: number
   maxY?: number
   referenceLines?: { value: number; color: string }[]
+  colorStops?: ColorStop[] // When provided, creates a value-based gradient
 }
 
 export function MiniChart({
@@ -31,6 +33,7 @@ export function MiniChart({
   minY,
   maxY,
   referenceLines = [],
+  colorStops,
 }: MiniChartProps) {
   // Derive time window from data (avoids impure Date.now() during render)
   const { filteredData, timeWindow } = useMemo(() => {
@@ -54,6 +57,42 @@ export function MiniChart({
   const yMin = minY !== undefined ? minY : Math.floor(dataMin - padding)
   const yMax = maxY !== undefined ? maxY : Math.ceil(dataMax + padding)
 
+  // Generate gradient stops from colorStops if provided
+  const gradientStops = useMemo(() => {
+    if (!colorStops || colorStops.length === 0) {
+      // Default single-color gradient
+      return [
+        { offset: '0%', color, opacity: 0.4 },
+        { offset: '100%', color, opacity: 0.05 },
+      ]
+    }
+
+    // Sort stops by threshold (high to low for SVG gradient which goes top to bottom)
+    const sorted = [...colorStops].sort((a, b) => b.threshold - a.threshold)
+
+    return sorted.map((stop) => {
+      // Map threshold to Y percentage (0% = top = maxY, 100% = bottom = minY)
+      const percent = ((yMax - stop.threshold) / (yMax - yMin)) * 100
+      const clampedPercent = Math.max(0, Math.min(100, percent))
+      return {
+        offset: `${clampedPercent}%`,
+        color: stop.color,
+        opacity: 0.4,
+      }
+    })
+  }, [colorStops, color, yMin, yMax])
+
+  // Determine stroke color - use the middle stop color if colorStops provided
+  const strokeColor = useMemo(() => {
+    if (!colorStops || colorStops.length === 0) {
+      return color
+    }
+    // Use the color of the middle threshold for the stroke
+    const sorted = [...colorStops].sort((a, b) => a.threshold - b.threshold)
+    const middleIndex = Math.floor(sorted.length / 2)
+    return sorted[middleIndex].color
+  }, [colorStops, color])
+
   if (filteredData.length === 0) {
     return (
       <div className="flex h-full w-full items-center justify-center rounded-lg bg-white/5">
@@ -73,8 +112,14 @@ export function MiniChart({
         >
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={color} stopOpacity={0.4} />
-              <stop offset="100%" stopColor={color} stopOpacity={0.05} />
+              {gradientStops.map((stop, i) => (
+                <stop
+                  key={i}
+                  offset={stop.offset}
+                  stopColor={stop.color}
+                  stopOpacity={stop.opacity}
+                />
+              ))}
             </linearGradient>
           </defs>
 
@@ -109,7 +154,7 @@ export function MiniChart({
           <Area
             type="monotone"
             dataKey="value"
-            stroke={color}
+            stroke={strokeColor}
             strokeWidth={2}
             fill={`url(#${gradientId})`}
             isAnimationActive={false}
