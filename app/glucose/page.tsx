@@ -91,8 +91,6 @@ export default function GlucoseOverlay() {
             data={history}
             color={graphColor}
             gradientId="glucoseGradient"
-            minY={40}
-            maxY={250}
             referenceLines={[
               { value: 70, color: '#f59e0b' },
               { value: 180, color: '#f59e0b' },

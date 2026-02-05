@@ -1,14 +1,6 @@
 'use client'
 
 import { useMemo } from 'react'
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  ResponsiveContainer,
-  ReferenceLine,
-} from 'recharts'
 import { ColorStop } from '@/lib/color-config'
 
 interface DataPoint {
@@ -23,7 +15,7 @@ interface MiniChartProps {
   minY?: number
   maxY?: number
   referenceLines?: { value: number; color: string }[]
-  colorStops?: ColorStop[] // When provided, creates a value-based gradient
+  colorStops?: ColorStop[]
 }
 
 export function MiniChart({
@@ -35,44 +27,54 @@ export function MiniChart({
   referenceLines = [],
   colorStops,
 }: MiniChartProps) {
-  // Derive time window from data (avoids impure Date.now() during render)
-  const { filteredData, timeWindow } = useMemo(() => {
+  const chartData = useMemo(() => {
     if (data.length === 0) {
-      return { filteredData: [], timeWindow: { start: 0, end: 0 } }
+      return null
     }
+
     const latestTime = Math.max(...data.map((d) => d.time))
     const windowStart = latestTime - 30 * 60 * 1000
+    const filtered = data.filter((d) => d.time >= windowStart)
+
+    if (filtered.length === 0) return null
+
+    const values = filtered.map((d) => d.value)
+    const dataMin = Math.min(...values)
+    const dataMax = Math.max(...values)
+    const range = dataMax - dataMin
+
+    const yMinVal =
+      minY !== undefined ? minY : range === 0 ? dataMin - 1 : dataMin
+    const yMaxVal =
+      maxY !== undefined ? maxY : range === 0 ? dataMax + 1 : dataMax
+    const yRange = yMaxVal - yMinVal
+
+    const timeRange = latestTime - windowStart
+
     return {
-      filteredData: data.filter((d) => d.time >= windowStart),
-      timeWindow: { start: windowStart, end: latestTime },
+      points: filtered,
+      yMin: yMinVal,
+      yMax: yMaxVal,
+      yRange,
+      timeStart: windowStart,
+      timeEnd: latestTime,
+      timeRange,
     }
-  }, [data])
+  }, [data, minY, maxY])
 
-  // Calculate domain
-  const values = filteredData.map((d) => d.value)
-  const dataMin = values.length > 0 ? Math.min(...values) : 0
-  const dataMax = values.length > 0 ? Math.max(...values) : 100
-  const padding = (dataMax - dataMin) * 0.1 || 10
-
-  const yMin = minY !== undefined ? minY : Math.floor(dataMin - padding)
-  const yMax = maxY !== undefined ? maxY : Math.ceil(dataMax + padding)
-
-  // Generate gradient stops from colorStops if provided
+  // Generate gradient stops
   const gradientStops = useMemo(() => {
-    if (!colorStops || colorStops.length === 0) {
-      // Default single-color gradient
+    if (!colorStops || colorStops.length === 0 || !chartData) {
       return [
         { offset: '0%', color, opacity: 0.4 },
         { offset: '100%', color, opacity: 0.05 },
       ]
     }
 
-    // Sort stops by threshold (high to low for SVG gradient which goes top to bottom)
     const sorted = [...colorStops].sort((a, b) => b.threshold - a.threshold)
-
     return sorted.map((stop) => {
-      // Map threshold to Y percentage (0% = top = maxY, 100% = bottom = minY)
-      const percent = ((yMax - stop.threshold) / (yMax - yMin)) * 100
+      const percent =
+        ((chartData.yMax - stop.threshold) / chartData.yRange) * 100
       const clampedPercent = Math.max(0, Math.min(100, percent))
       return {
         offset: `${clampedPercent}%`,
@@ -80,20 +82,18 @@ export function MiniChart({
         opacity: 0.4,
       }
     })
-  }, [colorStops, color, yMin, yMax])
+  }, [colorStops, color, chartData])
 
-  // Determine stroke color - use the middle stop color if colorStops provided
   const strokeColor = useMemo(() => {
     if (!colorStops || colorStops.length === 0) {
       return color
     }
-    // Use the color of the middle threshold for the stroke
     const sorted = [...colorStops].sort((a, b) => a.threshold - b.threshold)
     const middleIndex = Math.floor(sorted.length / 2)
     return sorted[middleIndex].color
   }, [colorStops, color])
 
-  if (filteredData.length === 0) {
+  if (!chartData) {
     return (
       <div className="flex h-full w-full items-center justify-center rounded-lg bg-white/5">
         <span className="text-xs italic text-white/30">
@@ -103,12 +103,57 @@ export function MiniChart({
     )
   }
 
+  const {
+    points,
+    yMin: yMinVal,
+    yMax: yMaxVal,
+    yRange,
+    timeStart,
+    timeRange,
+  } = chartData
+
+  // SVG viewBox dimensions
+  const width = 100
+  const height = 100
+  const padding = { top: 2, right: 2, bottom: 2, left: 2 }
+  const chartWidth = width - padding.left - padding.right
+  const chartHeight = height - padding.top - padding.bottom
+
+  // Convert data point to SVG coordinates
+  const toX = (time: number) =>
+    padding.left + ((time - timeStart) / timeRange) * chartWidth
+  const toY = (value: number) =>
+    padding.top + (1 - (value - yMinVal) / yRange) * chartHeight
+
+  // Build path for the line
+  const linePath = points
+    .map((p, i) => `${i === 0 ? 'M' : 'L'} ${toX(p.time)} ${toY(p.value)}`)
+    .join(' ')
+
+  // Build path for the filled area
+  const areaPath =
+    linePath +
+    ` L ${toX(points[points.length - 1].time)} ${padding.top + chartHeight}` +
+    ` L ${toX(points[0].time)} ${padding.top + chartHeight} Z`
+
   return (
-    <div className="h-full w-full min-h-[60px]">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart
-          data={filteredData}
-          margin={{ top: 5, right: 5, left: 0, bottom: 5 }}
+    <div className="relative h-full w-full min-h-[60px] flex">
+      {/* Y-axis labels */}
+      <div className="flex flex-col justify-between text-right pr-1 py-0.5">
+        <span className="text-[10px] text-white/50 font-medium">
+          {Math.round(yMaxVal)}
+        </span>
+        <span className="text-[10px] text-white/50 font-medium">
+          {Math.round(yMinVal)}
+        </span>
+      </div>
+
+      {/* Chart */}
+      <div className="flex-1 h-full">
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          preserveAspectRatio="none"
+          className="h-full w-full"
         >
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -123,44 +168,38 @@ export function MiniChart({
             </linearGradient>
           </defs>
 
-          <XAxis
-            dataKey="time"
-            type="number"
-            domain={[timeWindow.start, timeWindow.end]}
-            tick={false}
-            axisLine={false}
-            tickLine={false}
-          />
+          {/* Reference lines */}
+          {referenceLines.map((line, i) => {
+            const y = toY(line.value)
+            if (y < padding.top || y > padding.top + chartHeight) return null
+            return (
+              <line
+                key={i}
+                x1={padding.left}
+                y1={y}
+                x2={width - padding.right}
+                y2={y}
+                stroke={line.color}
+                strokeWidth={0.5}
+                strokeDasharray="2 2"
+                strokeOpacity={0.5}
+              />
+            )
+          })}
 
-          <YAxis
-            domain={[yMin, yMax]}
-            tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10 }}
-            axisLine={false}
-            tickLine={false}
-            width={28}
-            tickCount={3}
-          />
+          {/* Filled area */}
+          <path d={areaPath} fill={`url(#${gradientId})`} />
 
-          {referenceLines.map((line, i) => (
-            <ReferenceLine
-              key={i}
-              y={line.value}
-              stroke={line.color}
-              strokeDasharray="3 3"
-              strokeOpacity={0.5}
-            />
-          ))}
-
-          <Area
-            type="monotone"
-            dataKey="value"
+          {/* Line stroke */}
+          <path
+            d={linePath}
+            fill="none"
             stroke={strokeColor}
             strokeWidth={2}
-            fill={`url(#${gradientId})`}
-            isAnimationActive={false}
+            vectorEffect="non-scaling-stroke"
           />
-        </AreaChart>
-      </ResponsiveContainer>
+        </svg>
+      </div>
     </div>
   )
 }

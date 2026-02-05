@@ -103,8 +103,6 @@ export default function HeartRateOverlay() {
             data={history}
             color={graphColor}
             gradientId="heartGradient"
-            minY={50}
-            maxY={200}
             colorStops={graphColorStops}
           />
         </div>
